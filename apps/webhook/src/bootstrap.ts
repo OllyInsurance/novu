@@ -6,7 +6,9 @@ import { getErrorInterceptor, Logger } from '@novu/application-generic';
 import { AppModule } from './app.module';
 
 export async function bootstrap(): Promise<INestApplication> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // rawBody is required to verify provider webhook signatures (HMAC is computed
+  // over the exact received bytes, not the re-serialised JSON).
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
 
   app.useLogger(app.get(Logger));
   app.flushLogs();

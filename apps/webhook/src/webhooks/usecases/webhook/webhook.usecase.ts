@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Scope } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Scope, UnauthorizedException } from '@nestjs/common';
 import { AnalyticsService, IMailHandler, ISmsHandler, MailFactory, SmsFactory } from '@novu/application-generic';
 import { IntegrationEntity, IntegrationQuery, IntegrationRepository, MessageRepository } from '@novu/dal';
 import { ChannelTypeEnum, providers } from '@novu/shared';
@@ -55,6 +55,40 @@ export class Webhook {
 
     if (!this.provider.getMessageId || !this.provider.parseEventBody) {
       throw new NotFoundException(`Provider with ${integration.providerId} can not handle webhooks`);
+    }
+
+    /*
+     * Verify the provider's webhook signature before trusting the payload.
+     * Upstream community does not do this (it is part of the enterprise inbound
+     * webhook module), which leaves the endpoint open to forged delivery events
+     * from anyone who knows the URL. The providers already implement
+     * verifySignature; this just calls it.
+     *
+     * Providers return { success: true } when no signing key is configured, so
+     * this preserves upstream behaviour until a key is set on the integration.
+     */
+    if (typeof (this.provider as { verifySignature?: unknown }).verifySignature === 'function') {
+      const verification = await (
+        this.provider as unknown as {
+          verifySignature: (input: {
+            rawBody: Buffer | string;
+            headers: Record<string, string>;
+            body: Record<string, unknown>;
+          }) => Promise<{ success: boolean; message?: string }>;
+        }
+      ).verifySignature({
+        rawBody: command.rawBody ?? JSON.stringify(command.body),
+        headers: command.headers ?? {},
+        body: command.body,
+      });
+
+      if (!verification.success) {
+        Logger.error(
+          `Webhook signature verification failed for integration ${integration._id}: ${verification.message}`
+        );
+
+        throw new UnauthorizedException('Webhook signature verification failed');
+      }
     }
 
     const events = await this.parseEvents(command, integration.providerId, channel);

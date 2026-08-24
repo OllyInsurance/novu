@@ -1,4 +1,13 @@
-import { Body, ClassSerializerInterceptor, Controller, Param, Post, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  ClassSerializerInterceptor,
+  Controller,
+  Headers,
+  Param,
+  Post,
+  Req,
+  UseInterceptors,
+} from '@nestjs/common';
 
 import { IWebhookResult } from './dtos/webhooks-response.dto';
 import { WebhookCommand } from './usecases/webhook/webhook.command';
@@ -14,7 +23,9 @@ export class WebhooksController {
     @Param('organizationId') organizationId: string,
     @Param('environmentId') environmentId: string,
     @Param('providerOrIntegrationId') providerOrIntegrationId: string,
-    @Body() body: any
+    @Body() body: any,
+    @Headers() headers: Record<string, string>,
+    @Req() req: { rawBody?: Buffer }
   ): Promise<IWebhookResult[]> {
     return this.webhookUsecase.execute(
       WebhookCommand.create({
@@ -23,6 +34,8 @@ export class WebhooksController {
         providerOrIntegrationId,
         body,
         type: 'email',
+        headers,
+        rawBody: req?.rawBody,
       })
     );
   }
