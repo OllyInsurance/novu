@@ -30,10 +30,12 @@ RUN pnpm install --filter "novuhq" --filter "{apps/webhook}..." \
 
 RUN NODE_ENV=production pnpm build:webhook
 
-# Upstream copies these next to the built output; main.js reads them at boot.
+# Upstream also copies scripts/dotenvcreate.mjs alongside the build, but that
+# script pulls configuration from AWS Secrets Manager for Novu Cloud. A
+# self-hosted deployment takes its environment from compose, so it is dropped
+# here along with its entrypoint invocation.
 WORKDIR /usr/src/app/apps/webhook
-RUN cp src/dotenvcreate.mjs dist/dotenvcreate.mjs \
- && cp src/.example.env dist/.env \
+RUN cp src/.example.env dist/.env \
  && cp src/.env.development dist/.env.development \
  && cp src/.env.production dist/.env.production
 
@@ -51,4 +53,6 @@ WORKDIR /usr/src/app
 COPY --chown=1000:1000 --from=build /usr/src/deploy .
 COPY --chown=1000:1000 --from=build /usr/src/app/apps/webhook/dist ./dist
 
-ENTRYPOINT [ "sh", "-c", "node dist/dotenvcreate.mjs -s=$SECRET_NAME -r=$NOVU_REGION -e=$NOVU_ENTERPRISE -v=$NODE_ENV && pm2-runtime start dist/main.js -i max" ]
+# Upstream uses `-i max`, which forks one process per CPU (16 on our hosts) for
+# what is a low-volume receiver. Default to 2 and leave it tunable.
+ENTRYPOINT [ "sh", "-c", "pm2-runtime start dist/main.js -i ${WEB_CONCURRENCY:-2}" ]
