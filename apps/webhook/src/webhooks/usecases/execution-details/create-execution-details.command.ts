@@ -28,4 +28,10 @@ export class WebhookCommand extends EnvironmentCommand {
 
   @IsDefined()
   type: WebhookTypes;
+
+  // Olly patch (ENG-1144): the provider request's headers (svix-id) and
+  // whether a signing key verified it (webhook.usecase.ts).
+  headers?: Record<string, string>;
+
+  signatureChecked?: boolean;
 }

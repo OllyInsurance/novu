@@ -14,6 +14,10 @@ export class Webhook {
   public readonly smsFactory = new SmsFactory();
   private provider: IEmailProvider | ISmsProvider;
 
+  // Olly patch (ENG-1144): true once a signing key verified this request. Only
+  // then are its bounces handed to Olly (olly-email-events.ts).
+  private signatureChecked = false;
+
   constructor(
     private createExecutionDetails: CreateExecutionDetails,
     private integrationRepository: IntegrationRepository,
@@ -91,6 +95,12 @@ export class Webhook {
       }
     }
 
+    const merged = {
+      ...(integration.configurations ?? {}),
+      ...integration.credentials,
+    } as Record<string, unknown>;
+    this.signatureChecked = Boolean(merged.inboundWebhookSigningKey);
+
     const events = await this.parseEvents(command, integration.providerId, channel);
 
     this.analyticsService.track('[Webhook] - Provider Webhook events parsed', '', {
@@ -166,6 +176,7 @@ export class Webhook {
       webhook: {
         ...command,
         providerId,
+        signatureChecked: this.signatureChecked,
       },
       webhookEvent: parsedEvent,
       channel,
@@ -188,7 +199,16 @@ export class Webhook {
     if (!handler) {
       throw new NotFoundException(`Handler for integration of ${integration.providerId} was not found`);
     }
-    handler.buildProvider(integration.credentials);
+    /*
+     * Olly patch (ENG-1144): the API stores the signing key under
+     * configurations (ConfigurationsDto); the dashboard has put it under
+     * credentials. Read both, credentials winning, so a key set either way is
+     * enforced.
+     */
+    handler.buildProvider({
+      ...(integration.configurations ?? {}),
+      ...integration.credentials,
+    } as IntegrationEntity['credentials']);
 
     this.provider = handler.getProvider();
   }
