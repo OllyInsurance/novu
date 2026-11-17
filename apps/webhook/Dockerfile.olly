@@ -14,7 +14,31 @@
 # via --filter "{apps/webhook}...". Same output, fewer moving parts.
 #
 # Build (from the repo root):
-#   docker build -f apps/webhook/Dockerfile.olly -t olly-novu-webhook:3.17.0 .
+#   docker build -f apps/webhook/Dockerfile.olly -t olly-novu-webhook:3.17.0-olly.2 .
+#
+# Olly source patches. Re-apply each one when moving to a new Novu release:
+#
+#   1. Provider webhook signatures are verified before an event is trusted
+#      (src/webhooks/usecases/webhook/webhook.usecase.ts, the verifySignature
+#      call; webhook.command.ts and webhooks.controller.ts pass headers and the
+#      raw body through). Upstream community skips this.
+#
+#   2. Email bounces and complaints are handed to Olly's notifications
+#      (ENG-1144), so Novu is the only receiver of the provider's delivery
+#      events. After CreateExecutionDetails writes a bounced or complaint
+#      execution detail it calls toOllyEmailEvent / forwardOllyEmailEvent
+#      (src/webhooks/usecases/execution-details/olly-email-events.ts, and the
+#      one call at the end of create-execution-details.usecase.ts execute()).
+#      It POSTs JSON to OLLY_EMAIL_EVENTS_URL (notifications
+#      /internal/email-events) with X-Internal-Service: OLLY_INTERNAL_SVC_SECRET.
+#      Off when OLLY_EMAIL_EVENTS_URL is unset. A 5xx, a 404 or a network error
+#      makes the receiver answer 500 so the provider retries; notifications
+#      deduplicates on the provider's event id (svix-id). The container needs
+#      the olly_olly network to reach notifications (infra/novu/compose in
+#      OllyInsurance/olly).
+#      On upgrade: keep the file, re-add the call, and check that
+#      CreateExecutionDetailsCommand still carries message, webhook (with
+#      headers) and webhookEvent.event (status, externalId, row).
 
 FROM node:22.22.1-alpine3.22 AS build
 RUN apk add --no-cache g++ make py3-pip

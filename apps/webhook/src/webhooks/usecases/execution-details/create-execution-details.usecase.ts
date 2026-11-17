@@ -5,6 +5,7 @@ import { ChannelTypeEnum, ExecutionDetailsSourceEnum, ExecutionDetailsStatusEnum
 import { EmailEventStatusEnum, SmsEventStatusEnum } from '@novu/stateless';
 import { IWebhookResult } from '../../dtos/webhooks-response.dto';
 import { CreateExecutionDetailsCommand, WebhookCommand } from './create-execution-details.command';
+import { forwardOllyEmailEvent, toOllyEmailEvent } from './olly-email-events';
 
 const LOG_CONTEXT = 'CreateExecutionDetails';
 
@@ -25,6 +26,18 @@ export class CreateExecutionDetails {
     await this.executionDetailsRepository.create(executionDetailsEntity, { writeConcern: 1 });
 
     Logger.verbose({ executionDetailsEntity }, 'Created execution details', LOG_CONTEXT);
+
+    // Olly patch (ENG-1144): bounces and complaints go on to Olly's notifications.
+    const ollyEvent = toOllyEmailEvent({
+      channel: command.channel,
+      status: command.webhookEvent.event.status,
+      providerId: command.webhook.providerId,
+      headers: (command.webhook as { headers?: Record<string, string> }).headers,
+      message: command.message,
+      externalId: command.webhookEvent.event.externalId,
+      row: command.webhookEvent.event.row,
+    });
+    if (ollyEvent) await forwardOllyEmailEvent(ollyEvent);
   }
 
   private mapWebhookEventIntoEntity(
